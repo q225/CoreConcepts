@@ -1,3 +1,4 @@
+```cpp
 #include <iostream>
 #include <thread>
 #include <vector>
@@ -9,65 +10,89 @@
 
 class ThreadPool {
 public:
+    // Define the type for a job to be a function that takes no arguments and returns void
     using Job = std::function<void()>;
 
+    // Constructor: Initialize the thread pool with a given number of workers
     explicit ThreadPool(size_t workerCount) {
+        // Create worker threads and assign each a function that continuously executes jobs
         for (size_t i = 0; i < workerCount; ++i) {
             workers.emplace_back([this] {
+                // Each worker runs in an infinite loop until the ThreadPool is stopped
                 while (true) {
                     Job job;
                     {
+                        // Lock the mutex to safely access the queue of jobs
                         std::unique_lock<std::mutex> lock(this->queueMutex);
+                        // Wait until there's a job in the queue or the ThreadPool is stopped
                         this->condition.wait(lock, [this] {
                             return this->stop || !this->jobs.empty();
                         });
+                        // If the ThreadPool is stopped and there are no more jobs, exit the thread
                         if (this->stop && this->jobs.empty())
                             return;
+                        // Get the next job from the queue
                         job = std::move(this->jobs.front());
                         this->jobs.pop();
                     }
+                    // Unlock the mutex before executing the job to allow other threads to enqueue jobs
+                    lock.unlock();
+                    // Execute the job
                     job();
                 }
             });
         }
     }
 
+    // Destructor: Waits for all threads to finish before destroying the ThreadPool
     ~ThreadPool() {
         {
             std::unique_lock<std::mutex> lock(queueMutex);
+            // Set the stop flag to true to signal all worker threads to stop processing
             stop = true;
         }
+        // Notify all worker threads to wake up and check the stop flag
         condition.notify_all();
+        // Join all worker threads to wait for them to finish executing
         for (std::thread &worker : workers)
             worker.join();
     }
 
+    // Enqueue a job to be executed by a worker thread
     void enqueue(Job job) {
         {
+            // Lock the mutex to safely access the queue of jobs
             std::unique_lock<std::mutex> lock(queueMutex);
+            // If the ThreadPool is stopped, throw an exception
             if (stop)
                 throw std::runtime_error("enqueue on stopped ThreadPool");
+            // Add the job to the queue
             jobs.emplace(job);
         }
+        // Notify one worker thread to wake up and process the enqueued job
         condition.notify_one();
     }
 
 private:
-    std::vector<std::thread> workers;
-    std::queue<Job> jobs;
-    std::mutex queueMutex;
-    std::condition_variable condition;
-    bool stop = false;
+    std::vector<std::thread> workers; // Container for worker threads
+    std::queue<Job> jobs; // Queue to hold jobs to be executed
+    std::mutex queueMutex; // Mutex to synchronize access to the queue
+    std::condition_variable condition; // Condition variable for thread synchronization
+    bool stop = false; // Flag to signal whether the ThreadPool should stop processing jobs
 };
 
 int main() {
+    // Create a ThreadPool with 5 worker threads
     ThreadPool pool(5);
+    // Enqueue 30 jobs to be executed by the ThreadPool
     for (int i = 0; i < 30; ++i) {
         pool.enqueue([i] {
+            // Each job sleeps for 1 second to simulate work
             std::this_thread::sleep_for(std::chrono::seconds(1));
+            // Output a message indicating completion of the job
             std::cout << "job: completed" << std::endl;
         });
     }
     // Destructor of ThreadPool will wait for all threads to finish.
 }
-
+```
