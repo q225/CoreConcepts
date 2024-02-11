@@ -1,0 +1,73 @@
+#include <iostream>
+#include <thread>
+#include <vector>
+#include <functional>
+#include <chrono>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+
+class ThreadPool {
+public:
+    using Job = std::function<void()>;
+
+    explicit ThreadPool(size_t workerCount) {
+        for (size_t i = 0; i < workerCount; ++i) {
+            workers.emplace_back([this] {
+                while (true) {
+                    Job job;
+                    {
+                        std::unique_lock<std::mutex> lock(this->queueMutex);
+                        this->condition.wait(lock, [this] {
+                            return this->stop || !this->jobs.empty();
+                        });
+                        if (this->stop && this->jobs.empty())
+                            return;
+                        job = std::move(this->jobs.front());
+                        this->jobs.pop();
+                    }
+                    job();
+                }
+            });
+        }
+    }
+
+    ~ThreadPool() {
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            stop = true;
+        }
+        condition.notify_all();
+        for (std::thread &worker : workers)
+            worker.join();
+    }
+
+    void enqueue(Job job) {
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            if (stop)
+                throw std::runtime_error("enqueue on stopped ThreadPool");
+            jobs.emplace(job);
+        }
+        condition.notify_one();
+    }
+
+private:
+    std::vector<std::thread> workers;
+    std::queue<Job> jobs;
+    std::mutex queueMutex;
+    std::condition_variable condition;
+    bool stop = false;
+};
+
+int main() {
+    ThreadPool pool(5);
+    for (int i = 0; i < 30; ++i) {
+        pool.enqueue([i] {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            std::cout << "job: completed" << std::endl;
+        });
+    }
+    // Destructor of ThreadPool will wait for all threads to finish.
+}
+
