@@ -4,6 +4,6 @@ So in this repo, I am just creating the code in c++ or probably java to implemen
 
 I don't know everything, but I know few thing.
 
-It is going to be maintained by me, andif you want to contribute to the codebase you can simply raise a pr.
+It is going to be maintained by me, andif you want to contribute to the codebase you can simply raise a PR.
 
 Want to learn and share both.
